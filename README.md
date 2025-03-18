@@ -7,3 +7,17 @@ This project investigates the prevalence, conservation, and potential functional
 - **Cross-kingdom patterns**: High overlap percentages in archaea (*Haloferax volcanii*, 62%) and bacteria (*Bradyrhizobium*, 60.5%), with no correlation to genome size.
 - **Substrain conservation**: 31 *Haloferax volcanii* substrains show remarkably stable overlap percentages (59–63%), suggesting strong evolutionary constraints.
 - **Functional hypotheses**: Overlaps may optimize transcriptional coupling, genome compression, or mitigate transcriptional interference.
+
+## Installation
+### Prerequisites
+- **Languages**: Python 3.8+, R 4.1+
+- **Bioinformatics Tools**:
+  - `OrthoFinder` (v2.5+): `conda install -c bioconda orthofinder`
+  - `MEME Suite` (v5.5+): `conda install -c bioconda meme`
+  - `DESeq2` (R): `BiocManager::install("DESeq2")`
+- **R/Python Packages**: `tidyverse`, `Biostrings`, `ggplot2`, `numpy`, `pandas`
+
+```bash
+# Clone repository
+git clone https://github.com/yourusername/4nt-overlap-project.git
+cd 4nt-overlap-project
