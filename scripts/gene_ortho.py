@@ -1,6 +1,5 @@
 #check how many of gene pairs share the same orthologous group or not
 
-
 import os
 from BCBio import GFF
 from collections import defaultdict, Counter
