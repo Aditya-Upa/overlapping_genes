@@ -1,5 +1,6 @@
 #check how many of gene pairs share the same orthologous group or not
 
+
 import os
 from BCBio import GFF
 from collections import defaultdict, Counter
@@ -75,38 +76,39 @@ def process_strains(gff_dir, overlap_length):
         })
     return strain_data
 
+
 def process_orthogroups(orthofile, strain_data):
-    """Convert orthogroups with robust strain name matching"""
+    """Convert orthogroups with proper strain name matching"""
     ortho_dict = defaultdict(lambda: defaultdict(set))
     
     with open(orthofile) as fh:
-        header = next(fh).strip().split('\t')
-        tsv_strain_names = header[1:]
+        header = next(fh)
+        tsv_strain_names = header.strip().split('\t')[1:]
         
-        # Create normalized name mapping
-        gff_strain_names = {
-            sd['name'].lower().replace(" ", "_"): idx 
-            for idx, sd in enumerate(strain_data)
-        }
-        
-        strain_indices = []
-        for tsv_name in tsv_strain_names:
-            clean_name = tsv_name.lower().replace(" ", "_").split('.')[0]
-            strain_indices.append(gff_strain_names.get(clean_name, None))
+        # Create mapping from TSV names to strain_data indices
+        strain_index_map = {}
+        for idx, sd in enumerate(strain_data):
+            if sd['name'] in tsv_strain_names:
+                strain_index_map[tsv_strain_names.index(sd['name'])] = idx
         
         for line in fh:
             parts = line.strip().split('\t')
             group_id = parts[0]
-            for col_idx, strain_idx in enumerate(strain_indices):
-                if strain_idx is None or (col_idx+1) >= len(parts):
+            
+            for tsv_idx, strain_proteins in enumerate(parts[1:]):
+                # Map TSV column index to strain_data index
+                strain_idx = strain_index_map.get(tsv_idx, None)
+                if strain_idx is None:
                     continue
-                proteins = parts[col_idx+1].split(',')
+                
                 strain_map = strain_data[strain_idx]['protein_map']
-                for prot_id in proteins:
+                for prot_id in strain_proteins.split(','):
                     prot_id = prot_id.strip()
-                    if prot_id in strain_map:
+                    if prot_id and prot_id in strain_map:
                         ortho_dict[group_id][strain_idx].add(strain_map[prot_id])
-    return ortho_dict
+    
+    #print(ortho_dict)
+    return (ortho_dict)
 
 def analyze_conservation(strain_data, ortho_dict):
     """Analyze overlaps with direct orthogroup checking"""
@@ -151,7 +153,7 @@ def verify_mappings(ortho_dict, strain_data):
 def main():
     overlap_length = 4
     strain_data = process_strains("gff_files", overlap_length)
-    ortho_dict = process_orthogroups("Orthogroups.tsv", strain_data)
+    ortho_dict = process_orthogroups("Orthogroups_old.tsc", strain_data)
     verify_mappings(ortho_dict, strain_data)
     report = analyze_conservation(strain_data, ortho_dict)
 
@@ -171,4 +173,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
