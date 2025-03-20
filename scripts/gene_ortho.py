@@ -1,4 +1,4 @@
-#check how many of gene pairs share the same orthologous group or not
+#check how many of gene pairs share the same orthologous group 
 
 import os
 from BCBio import GFF
