@@ -22,8 +22,13 @@ def parse_emapper(emapper_file):
                             'KEGG_Reaction', 'KEGG_rclass', 'BRITE', 'KEGG_TC', 'CAZy',
                             'BiGG_Reaction', 'PFAMs'
                         ])
+
+                # Convert '-' to NaN for better pandas handling
+        # df.replace('-', pd.NA, inplace=True)
+
         df['primary_OG'] = df['eggNOG_OGs'].str.split('@').str[0].str.split(',').str[0]
         return df[['query', 'primary_OG', 'COG_category', 'KEGG_Pathway', 'GOs']].dropna()
+
     except Exception as e:
         print(f"Error parsing {emapper_file}: {str(e)}")
         return pd.DataFrame()
@@ -62,7 +67,7 @@ def load_strain_data(strain):
     }
 
 def analyze_functional_sharing(strain_data):
-    """Calculate functional sharing statistics"""
+    """Calculate functional sharing statistics, ignoring '-' and NaN"""
     stats = defaultdict(int)
     cog_counts = defaultdict(int)
     kegg_counts = defaultdict(int)
@@ -77,23 +82,34 @@ def analyze_functional_sharing(strain_data):
 
         stats['total_pairs'] += 1
 
-        # COG comparison
-        if ann1['COG'] == ann2['COG'] and pd.notna(ann1['COG']):
-            stats['shared_cog'] += 1
-            cog_counts[ann1['COG']] += 1
+        # COG comparison (ignore '-' and NaN)
+        cog1 = ann1['COG']
+        cog2 = ann2['COG']
+        if pd.notna(cog1) and pd.notna(cog2) and cog1 != '-' and cog2 != '-':
+            if cog1 == cog2:
+                stats['shared_cog'] += 1
+                cog_counts[cog1] += 1
+        else:
+            stats['missing_cog'] += 1
 
-        # KEGG comparison
-        kegg1 = set(str(ann1['KEGG']).split(','))
-        kegg2 = set(str(ann2['KEGG']).split(','))
+        # KEGG comparison (handle '-' as empty)
+        kegg1 = str(ann1['KEGG']).strip()
+        kegg2 = str(ann2['KEGG']).strip()
+        kegg1 = set() if kegg1 in ['-', 'nan'] else set(kegg1.split(','))
+        kegg2 = set() if kegg2 in ['-', 'nan'] else set(kegg2.split(','))
+
         common_kegg = kegg1 & kegg2
         if common_kegg:
             stats['shared_kegg'] += 1
             for path in common_kegg:
                 kegg_counts[path] += 1
 
-        # GO comparison
-        go1 = set(str(ann1['GO']).split(','))
-        go2 = set(str(ann2['GO']).split(','))
+        # GO comparison (handle '-' as empty)
+        go1 = str(ann1['GO']).strip()
+        go2 = str(ann2['GO']).strip()
+        go1 = set() if go1 in ['-', 'nan'] else set(go1.split(','))
+        go2 = set() if go2 in ['-', 'nan'] else set(go2.split(','))
+
         if go1 & go2:
             stats['shared_go'] += 1
 
@@ -103,6 +119,72 @@ def analyze_functional_sharing(strain_data):
         'kegg_counts': dict(kegg_counts)
     }
 
+# def analyze_functional_sharing(strain_data):
+#     """Calculate functional sharing statistics"""
+#     stats = defaultdict(int)
+#     cog_counts = defaultdict(int)
+#     kegg_counts = defaultdict(int)
+
+#     for gene1, gene2 in strain_data['overlaps']:
+#         ann1 = strain_data['annotations'].get(gene1)
+#         ann2 = strain_data['annotations'].get(gene2)
+
+#         if not ann1 or not ann2:
+#             stats['pairs_missing_annotations'] += 1
+#             continue
+
+#         stats['total_pairs'] += 1
+
+#         # COG comparison
+#         if ann1['COG'] == ann2['COG'] and pd.notna(ann1['COG']):
+#             stats['shared_cog'] += 1
+#             cog_counts[ann1['COG']] += 1
+
+#         # KEGG comparison
+#         kegg1 = set(str(ann1['KEGG']).split(','))
+#         kegg2 = set(str(ann2['KEGG']).split(','))
+#         common_kegg = kegg1 & kegg2
+#         if common_kegg:
+#             stats['shared_kegg'] += 1
+#             for path in common_kegg:
+#                 kegg_counts[path] += 1
+
+#         # GO comparison
+#         go1 = set(str(ann1['GO']).split(','))
+#         go2 = set(str(ann2['GO']).split(','))
+#         if go1 & go2:
+#             stats['shared_go'] += 1
+
+#     return {
+#         'stats': dict(stats),
+#         'cog_counts': dict(cog_counts),
+#         'kegg_counts': dict(kegg_counts)
+#     }
+
+#WRITE THE OVERLAP FILES TO A TEXT FILE IN A FORMAT WHICH WILL BE USED BY R SCRIPT NEXT
+
+def save_overlaps_for_r(overlaps_data, filename="overlap_genes.txt"):
+    """Save overlap genes in R-compatible format"""
+    with open(filename, 'w') as f:
+        f.write("# Overlapping genes for clusterProfiler analysis\n")
+        f.write("overlap_genes <- c(\n")
+
+        # Collect all unique genes with strain prefixes
+        unique_genes = set()
+        for strain, genes in overlaps_data.items():
+            for gene1, gene2 in genes:
+                unique_genes.add(f'"{strain}|{gene1}"')
+                unique_genes.add(f'"{strain}|{gene2}"')
+
+        # Write in chunks for readability
+        chunk_size = 10
+        genes_list = sorted(list(unique_genes))
+        for i in range(0, len(genes_list), chunk_size):
+            chunk = genes_list[i:i+chunk_size]
+            f.write("  " + ",\n  ".join(chunk) + ("," if i+chunk_size < len(genes_list) else "") + "\n")
+
+        f.write(")\n")
+
 def full_analysis():
     strains = [
         "GCA_000025685.1", "GCA_010692905.1", "GCA_012726105.1",
@@ -110,11 +192,16 @@ def full_analysis():
     ]
 
     all_stats = {}
+    overlaps_data = {}
 
     for strain in strains:
         print(f"\nProcessing {strain}...")
         strain_data = load_strain_data(strain)
 
+        #Store overlaps with strain prefix
+        overlaps_data[strain] = strain_data['overlaps']
+
+        #print(strain_data['overlaps'])
         if not strain_data['overlaps']:
             print(f"No overlaps found for {strain}")
             continue
@@ -128,6 +215,9 @@ def full_analysis():
         print(f"Shared GO: {results['stats'].get('shared_go', 0)}")
 
         all_stats[strain] = results
+
+    # Save overlaps for clusterProfiler analysis using R
+    save_overlaps_for_r(overlaps_data)
 
     # Generate visualizations
     plot_combined_results(all_stats)
@@ -159,12 +249,12 @@ def plot_combined_results(all_stats):
     ax[0].set_title("Functional Category Sharing")
     ax[0].set_ylabel("Proportion of Overlapping Pairs")
 
-    # COG distribution
-    if cog_dist:
-        cog_df = pd.DataFrame.from_dict(cog_dist, orient='index').reset_index()
+    #COG distribution
+    if kegg_dist:
+        cog_df=pd.DataFrame.from_dict(cog_dist, orient='index').reset_index()
         cog_df.columns = ['COG', 'Count']
         cog_df = cog_df.sort_values('Count', ascending=False).head(10)
-        sns.barplot(x='Count', y='COG', data=cog_df, ax=ax[1], palette="Greens_d")
+        sns.barplot(x='Count', y='COG', data=cog_df, ax=ax[1], palette="Accent")
         ax[1].set_title("Top 10 Shared COG Categories")
 
     plt.tight_layout()
